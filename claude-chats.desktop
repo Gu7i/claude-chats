@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Claude Chats
+Comment=Visor de conversaciones de Claude Code
+Exec=/home/guti/.local/bin/claude-chats
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Utility;

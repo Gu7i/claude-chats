@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""Claude Chats - Visor de conversaciones de Claude Code"""
+
+import json
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QTextDocument
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QListWidget, QListWidgetItem, QTextBrowser, QLabel, QPushButton,
+    QSplitter, QLineEdit,
+)
+
+PROJECTS_DIR = Path.home() / '.claude/projects'
+
+PRICING = {
+    'claude-sonnet-4-6': (3.0, 15.0),
+    'claude-opus-4-8': (5.0, 25.0),
+    'claude-opus-4-7': (5.0, 25.0),
+    'claude-opus-4-6': (5.0, 25.0),
+    'claude-fable-5': (10.0, 50.0),
+    'claude-haiku-4-5': (1.0, 5.0),
+}
+
+
+def estimate_cost(model, input_tokens, output_tokens):
+    prices = PRICING.get(model, (3.0, 15.0))
+    return (input_tokens * prices[0] + output_tokens * prices[1]) / 1_000_000
+
+
+def load_all_chats():
+    chats = []
+    if not PROJECTS_DIR.exists():
+        return chats
+    for proj_dir in PROJECTS_DIR.iterdir():
+        if not proj_dir.is_dir():
+            continue
+        for jsonl_file in proj_dir.glob('*.jsonl'):
+            chat = parse_chat(jsonl_file)
+            if chat:
+                chats.append(chat)
+    return sorted(chats, key=lambda c: c['mtime'], reverse=True)
+
+
+def parse_chat(path):
+    first_user = None
+    messages = []
+    input_tokens = 0
+    output_tokens = 0
+    model = None
+
+    try:
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+
+                msg = d.get('message', {})
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+                usage = msg.get('usage', {})
+
+                text = ''
+                if isinstance(content, list):
+                    for c in content:
+                        if isinstance(c, dict) and c.get('type') == 'text':
+                            t = c.get('text', '').strip()
+                            if t:
+                                text = t
+                                break
+                elif isinstance(content, str):
+                    text = content.strip()
+
+                if role == 'user' and text and not text.startswith('<'):
+                    if first_user is None:
+                        first_user = text
+                    messages.append({'role': 'user', 'text': text})
+                elif role == 'assistant' and text:
+                    messages.append({'role': 'assistant', 'text': text})
+                    if not model and msg.get('model'):
+                        model = msg['model']
+
+                if usage:
+                    input_tokens += (usage.get('input_tokens', 0) +
+                                     usage.get('cache_creation_input_tokens', 0))
+                    output_tokens += usage.get('output_tokens', 0)
+    except Exception:
+        return None
+
+    if not first_user:
+        return None
+
+    stat = path.stat()
+    cost = estimate_cost(model or '', input_tokens, output_tokens)
+
+    return {
+        'id': path.stem,
+        'path': str(path),
+        'project': path.parent.name,
+        'title': first_user,
+        'messages': messages,
+        'mtime': stat.st_mtime,
+        'date_str': datetime.fromtimestamp(stat.st_mtime).strftime('%d %b %H:%M'),
+        'msg_count': len(messages),
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'cost': cost,
+        'model': model or 'unknown',
+    }
+
+
+def _md_to_html(text):
+    import re
+    doc = QTextDocument()
+    doc.setMarkdown(text)
+    full_html = doc.toHtml()
+    match = re.search(r'<body[^>]*>(.*?)</body>', full_html, re.DOTALL)
+    return match.group(1) if match else f'<p>{text}</p>'
+
+
+class ChatListItem(QListWidgetItem):
+    def __init__(self, chat):
+        super().__init__()
+        self.chat = chat
+        title = chat['title'][:55] + ('…' if len(chat['title']) > 55 else '')
+        model_short = chat['model'].replace('claude-', '').replace('-', ' ')
+        self.setText(f"{title}\n{chat['date_str']}  ·  {chat['msg_count']} msgs  ·  {model_short}")
+        self.setSizeHint(QSize(0, 58))
+
+
+class ChatViewer(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.current_chat = None
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.header = QLabel("Seleccioná un chat de la lista")
+        self.header.setWordWrap(True)
+        self.header.setStyleSheet(
+            "padding: 12px 16px; font-size: 13px; font-weight: bold;"
+            "border-bottom: 1px solid #2a2a3a;"
+        )
+        layout.addWidget(self.header)
+
+        self.content = QTextBrowser()
+        self.content.setOpenExternalLinks(False)
+        self.content.setStyleSheet("border: none; padding: 4px;")
+        layout.addWidget(self.content)
+
+        footer = QWidget()
+        footer.setFixedHeight(44)
+        footer.setStyleSheet("border-top: 1px solid #2a2a3a; background: #0d1117;")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(12, 0, 12, 0)
+
+        self.stats_label = QLabel()
+        self.stats_label.setStyleSheet("color: #666; font-size: 11px;")
+        footer_layout.addWidget(self.stats_label)
+        footer_layout.addStretch()
+
+        self.open_btn = QPushButton("Abrir en Konsole")
+        self.open_btn.setEnabled(False)
+        self.open_btn.clicked.connect(self._open_in_konsole)
+        self.open_btn.setStyleSheet("""
+            QPushButton {
+                background: #1d4ed8; color: white; border: none;
+                padding: 6px 16px; border-radius: 4px; font-size: 12px;
+            }
+            QPushButton:hover { background: #2563eb; }
+            QPushButton:disabled { background: #333; color: #666; }
+        """)
+        footer_layout.addWidget(self.open_btn)
+        layout.addWidget(footer)
+
+    def load_chat(self, chat):
+        self.current_chat = chat
+        title = chat['title'][:90] + ('…' if len(chat['title']) > 90 else '')
+        self.header.setText(title)
+        self.open_btn.setEnabled(True)
+
+        html = ['<html><body style="font-family:sans-serif;font-size:13px;margin:0;padding:8px;">']
+        for msg in chat['messages']:
+            role = msg['role']
+            body = _md_to_html(msg['text'])
+            if role == 'user':
+                html.append(
+                    '<div style="margin:6px 16px 4px 56px;background:#1e3a5f;'
+                    'border-radius:8px;padding:10px 14px;color:#c8d8ee;">'
+                    '<div style="font-size:10px;color:#6b9fd4;margin-bottom:4px;">Vos</div>'
+                    f'{body}</div>'
+                )
+            else:
+                html.append(
+                    '<div style="margin:4px 56px 6px 16px;background:#161b27;'
+                    'border-radius:8px;padding:10px 14px;color:#d4d4d8;'
+                    'border-left:3px solid #4a4a8a;">'
+                    '<div style="font-size:10px;color:#7878aa;margin-bottom:4px;">Claude</div>'
+                    f'{body}</div>'
+                )
+        html.append('</body></html>')
+        self.content.setHtml(''.join(html))
+
+        cost_str = f"${chat['cost']:.4f}" if chat['cost'] > 0 else "sin datos de uso"
+        self.stats_label.setText(
+            f"↑ {chat['input_tokens']:,}  ↓ {chat['output_tokens']:,} tokens  ·  {cost_str}  ·  {chat['model']}"
+        )
+
+    def _open_in_konsole(self):
+        if self.current_chat:
+            subprocess.Popen(['konsole', '-e', 'claude', '--resume', self.current_chat['id']])
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.all_chats = []
+        self.setWindowTitle("Claude Chats")
+        self.setMinimumSize(860, 560)
+        self.resize(1100, 680)
+        self._setup_ui()
+        self._load_chats()
+
+    def _setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Top bar
+        topbar = QWidget()
+        topbar.setFixedHeight(50)
+        topbar.setStyleSheet("background: #0d1117; border-bottom: 1px solid #21262d;")
+        topbar_layout = QHBoxLayout(topbar)
+        topbar_layout.setContentsMargins(16, 0, 16, 0)
+
+        title = QLabel("Claude Chats")
+        title.setStyleSheet("font-size: 15px; font-weight: bold; color: #e6edf3;")
+        topbar_layout.addWidget(title)
+        topbar_layout.addStretch()
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Buscar...")
+        self.search.setFixedWidth(200)
+        self.search.textChanged.connect(self._filter_chats)
+        self.search.setStyleSheet("""
+            QLineEdit {
+                background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+                padding: 5px 10px; border-radius: 6px; font-size: 12px;
+            }
+            QLineEdit:focus { border-color: #388bfd; }
+        """)
+        topbar_layout.addWidget(self.search)
+
+        refresh_btn = QPushButton("↻")
+        refresh_btn.setFixedSize(32, 32)
+        refresh_btn.setToolTip("Actualizar")
+        refresh_btn.clicked.connect(self._load_chats)
+        refresh_btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+                border-radius: 6px; font-size: 14px;
+            }
+            QPushButton:hover { background: #30363d; }
+        """)
+        topbar_layout.addWidget(refresh_btn)
+        main_layout.addWidget(topbar)
+
+        # Splitter
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(1)
+        splitter.setStyleSheet("QSplitter::handle { background: #21262d; }")
+
+        # Left panel
+        left = QWidget()
+        left.setStyleSheet("background: #0d1117;")
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+
+        self.chat_list = QListWidget()
+        self.chat_list.setStyleSheet("""
+            QListWidget {
+                background: #0d1117; border: none; color: #c9d1d9; font-size: 12px;
+            }
+            QListWidget::item {
+                padding: 8px 12px; border-bottom: 1px solid #161b22;
+            }
+            QListWidget::item:selected { background: #1d4ed8; color: #fff; }
+            QListWidget::item:hover:!selected { background: #161b22; }
+        """)
+        self.chat_list.currentItemChanged.connect(self._on_chat_selected)
+        left_layout.addWidget(self.chat_list)
+
+        self.list_footer = QLabel()
+        self.list_footer.setFixedHeight(28)
+        self.list_footer.setStyleSheet(
+            "padding: 0 12px; color: #484f58; font-size: 11px;"
+            "border-top: 1px solid #21262d;"
+        )
+        left_layout.addWidget(self.list_footer)
+
+        splitter.addWidget(left)
+
+        # Right panel
+        self.viewer = ChatViewer()
+        self.viewer.setStyleSheet("background: #0d1117; color: #c9d1d9;")
+        splitter.addWidget(self.viewer)
+
+        splitter.setSizes([320, 780])
+        main_layout.addWidget(splitter)
+
+        # Global stats bar
+        statsbar = QWidget()
+        statsbar.setFixedHeight(28)
+        statsbar.setStyleSheet("background: #090d14; border-top: 1px solid #161b22;")
+        stats_layout = QHBoxLayout(statsbar)
+        stats_layout.setContentsMargins(16, 0, 16, 0)
+
+        self.global_stats = QLabel()
+        self.global_stats.setStyleSheet("color: #484f58; font-size: 11px;")
+        stats_layout.addWidget(self.global_stats)
+        main_layout.addWidget(statsbar)
+
+        self.setStyleSheet("background: #0d1117; color: #c9d1d9;")
+
+    def _load_chats(self):
+        self.all_chats = load_all_chats()
+        self._render_list(self.all_chats)
+        self._update_global_stats()
+
+    def _render_list(self, chats):
+        self.chat_list.clear()
+        for chat in chats:
+            self.chat_list.addItem(ChatListItem(chat))
+        n = len(chats)
+        self.list_footer.setText(f"  {n} conversación{'es' if n != 1 else ''}")
+
+    def _filter_chats(self, query):
+        query = query.lower().strip()
+        filtered = self.all_chats if not query else [
+            c for c in self.all_chats if query in c['title'].lower()
+        ]
+        self._render_list(filtered)
+
+    def _on_chat_selected(self, current, _previous):
+        if isinstance(current, ChatListItem):
+            self.viewer.load_chat(current.chat)
+
+    def _update_global_stats(self):
+        n = len(self.all_chats)
+        total_in = sum(c['input_tokens'] for c in self.all_chats)
+        total_out = sum(c['output_tokens'] for c in self.all_chats)
+        total_cost = sum(c['cost'] for c in self.all_chats)
+        self.global_stats.setText(
+            f"{n} chats  ·  ↑ {total_in:,}  ↓ {total_out:,} tokens  ·  costo total estimado: ${total_cost:.4f}"
+        )
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Claude Chats")
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+    main()
