@@ -177,9 +177,10 @@ class ChatListItem(QListWidgetItem):
 # ─── Chat viewer ──────────────────────────────────────────────────────────────
 
 class ChatViewer(QWidget):
-    def __init__(self):
+    def __init__(self, on_delete=None):
         super().__init__()
         self.current_chat = None
+        self._on_delete = on_delete
         self._setup_ui()
 
     def _setup_ui(self):
@@ -240,6 +241,19 @@ class ChatViewer(QWidget):
         f_layout.addWidget(self.stats_label)
         f_layout.addStretch()
 
+        self.delete_btn = QPushButton("Eliminar")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.clicked.connect(self._delete_chat)
+        self.delete_btn.setStyleSheet("""
+            QPushButton {
+                background: #3a1a1a; color: #f87171; border: 1px solid #7f1d1d;
+                padding: 6px 12px; border-radius: 4px; font-size: 12px;
+            }
+            QPushButton:hover { background: #7f1d1d; color: #fca5a5; }
+            QPushButton:disabled { background: #21262d; color: #484f58; border-color: #21262d; }
+        """)
+        f_layout.addWidget(self.delete_btn)
+
         self.konsole_btn = QPushButton("Abrir en Konsole")
         self.konsole_btn.setEnabled(False)
         self.konsole_btn.clicked.connect(self._open_konsole)
@@ -274,7 +288,8 @@ class ChatViewer(QWidget):
         self.title_label.setText(chat['title'][:100])
         sid = chat['id']
         self.id_label.setText(f"{sid[:8]}…{sid[-8:]}")
-        for btn in (self.copy_id_btn, self.copy_cmd_btn, self.export_btn, self.konsole_btn):
+        for btn in (self.copy_id_btn, self.copy_cmd_btn, self.export_btn,
+                    self.konsole_btn, self.delete_btn):
             btn.setEnabled(True)
 
         html = ['''<html><head><style>
@@ -300,18 +315,21 @@ p { margin: 4px 0; }
             body = _md_to_html(msg['text'])
             if msg['role'] == 'user':
                 html.append(
-                    '<div style="margin:6px 16px 4px 56px;background:#1e3a5f;'
-                    'border-radius:8px;padding:10px 14px;color:#c8d8ee;">'
+                    '<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
+                    '<tr><td width="18%"></td>'
+                    '<td><div style="background:#1e3a5f;border-radius:8px;'
+                    'padding:10px 14px;color:#c8d8ee;">'
                     '<div style="font-size:10px;color:#6b9fd4;margin-bottom:4px;">Vos</div>'
-                    f'{body}</div>'
+                    f'{body}</div></td></tr></table>'
                 )
             else:
                 html.append(
-                    '<div style="margin:4px 56px 6px 16px;background:#161b27;'
-                    'border-radius:8px;padding:10px 14px;color:#d4d4d8;'
-                    'border-left:3px solid #4a4a8a;">'
+                    '<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
+                    '<tr><td><div style="background:#161b27;border-radius:8px;'
+                    'padding:10px 14px;color:#d4d4d8;border-left:3px solid #4a4a8a;">'
                     '<div style="font-size:10px;color:#7878aa;margin-bottom:4px;">Claude</div>'
-                    f'{body}</div>'
+                    f'{body}</div></td>'
+                    '<td width="18%"></td></tr></table>'
                 )
         html.append('</body></html>')
         self.content.setHtml(''.join(html))
@@ -368,6 +386,32 @@ p { margin: 4px 0; }
             ['konsole', '-e', 'bash', '-c', f'claude --resume {sid}; bash'],
             env=env
         )
+
+    def _delete_chat(self):
+        if not self.current_chat:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        chat = self.current_chat
+        title = chat['title'][:60]
+        reply = QMessageBox.question(
+            self, "Eliminar conversación",
+            f"¿Eliminar esta conversación?\n\n\"{title}\"",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        Path(chat['path']).unlink(missing_ok=True)
+        self.current_chat = None
+        self.title_label.setText("Seleccioná un chat")
+        self.id_label.setText("")
+        self.content.clear()
+        self.stats_label.setText("")
+        for btn in (self.copy_id_btn, self.copy_cmd_btn, self.export_btn,
+                    self.konsole_btn, self.delete_btn):
+            btn.setEnabled(False)
+        if self._on_delete:
+            self._on_delete()
 
 
 # ─── Token usage chart ────────────────────────────────────────────────────────
@@ -544,9 +588,10 @@ class UsageTab(QWidget):
 # ─── Chats tab ────────────────────────────────────────────────────────────────
 
 class ChatsTab(QWidget):
-    def __init__(self, get_chats):
+    def __init__(self, get_chats, on_reload=None):
         super().__init__()
         self._get_chats = get_chats
+        self._on_reload = on_reload
         self._setup_ui()
 
     def _setup_ui(self):
@@ -639,7 +684,7 @@ class ChatsTab(QWidget):
         ll.addWidget(self.list_footer)
         splitter.addWidget(left)
 
-        self.viewer = ChatViewer()
+        self.viewer = ChatViewer(on_delete=self._on_chat_deleted)
         self.viewer.setStyleSheet("background: #0d1117; color: #c9d1d9;")
         splitter.addWidget(self.viewer)
 
@@ -716,6 +761,12 @@ class ChatsTab(QWidget):
         if isinstance(current, ChatListItem):
             self.viewer.load_chat(current.chat)
 
+    def _on_chat_deleted(self):
+        if self._on_reload:
+            self._on_reload()
+        else:
+            self._apply_filters()
+
 
 # ─── Main window ──────────────────────────────────────────────────────────────
 
@@ -770,7 +821,7 @@ class MainWindow(QMainWindow):
             QTabBar::tab:hover:!selected { color: #c9d1d9; }
         """)
 
-        self.chats_tab = ChatsTab(lambda: self.all_chats)
+        self.chats_tab = ChatsTab(lambda: self.all_chats, on_reload=self._load_chats)
         self.chats_tab.setStyleSheet("background: #0d1117;")
         self.tabs.addTab(self.chats_tab, "Chats")
 
