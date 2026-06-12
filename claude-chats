@@ -2,17 +2,19 @@
 """Claude Chats - Visor de conversaciones de Claude Code"""
 
 import json
+import re
 import subprocess
 import sys
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta, date
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QTextDocument
+from PySide6.QtGui import QTextDocument, QPainter, QColor, QFont, QPen
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QTextBrowser, QLabel, QPushButton,
-    QSplitter, QLineEdit,
+    QSplitter, QLineEdit, QComboBox, QTabWidget, QFileDialog, QSizePolicy,
 )
 
 PROJECTS_DIR = Path.home() / '.claude/projects'
@@ -32,6 +34,16 @@ def estimate_cost(model, input_tokens, output_tokens):
     return (input_tokens * prices[0] + output_tokens * prices[1]) / 1_000_000
 
 
+def get_birth_time(path):
+    try:
+        r = subprocess.run(['stat', '-c', '%W', str(path)],
+                           capture_output=True, text=True, timeout=2)
+        t = int(r.stdout.strip())
+        return t if t > 0 else None
+    except Exception:
+        return None
+
+
 def load_all_chats():
     chats = []
     if not PROJECTS_DIR.exists():
@@ -48,6 +60,7 @@ def load_all_chats():
 
 def parse_chat(path):
     first_user = None
+    last_assistant = None
     messages = []
     input_tokens = 0
     output_tokens = 0
@@ -86,6 +99,7 @@ def parse_chat(path):
                     messages.append({'role': 'user', 'text': text})
                 elif role == 'assistant' and text:
                     messages.append({'role': 'assistant', 'text': text})
+                    last_assistant = text
                     if not model and msg.get('model'):
                         model = msg['model']
 
@@ -102,40 +116,64 @@ def parse_chat(path):
     stat = path.stat()
     cost = estimate_cost(model or '', input_tokens, output_tokens)
 
+    birth = get_birth_time(path)
+    duration_str = ''
+    if birth:
+        secs = int(stat.st_mtime - birth)
+        if secs >= 60:
+            mins = secs // 60
+            duration_str = f"{mins // 60}h {mins % 60}m" if mins >= 60 else f"{mins} min"
+
+    raw = path.parent.name
+    display = raw.lstrip('-').replace('-', '/')
+    if display.startswith('home/'):
+        parts = display.split('/', 2)
+        display = '~' if len(parts) < 3 else '~/' + parts[2]
+
     return {
         'id': path.stem,
         'path': str(path),
-        'project': path.parent.name,
+        'project': raw,
+        'project_display': display or '~',
         'title': first_user,
+        'last_assistant': (last_assistant or '')[:120],
         'messages': messages,
         'mtime': stat.st_mtime,
+        'date': datetime.fromtimestamp(stat.st_mtime).date(),
         'date_str': datetime.fromtimestamp(stat.st_mtime).strftime('%d %b %H:%M'),
         'msg_count': len(messages),
         'input_tokens': input_tokens,
         'output_tokens': output_tokens,
         'cost': cost,
         'model': model or 'unknown',
+        'duration_str': duration_str,
     }
 
 
 def _md_to_html(text):
-    import re
     doc = QTextDocument()
     doc.setMarkdown(text)
     full_html = doc.toHtml()
-    match = re.search(r'<body[^>]*>(.*?)</body>', full_html, re.DOTALL)
-    return match.group(1) if match else f'<p>{text}</p>'
+    m = re.search(r'<body[^>]*>(.*?)</body>', full_html, re.DOTALL)
+    return m.group(1) if m else f'<p>{text}</p>'
 
+
+# ─── Chat list item ───────────────────────────────────────────────────────────
 
 class ChatListItem(QListWidgetItem):
     def __init__(self, chat):
         super().__init__()
         self.chat = chat
         title = chat['title'][:55] + ('…' if len(chat['title']) > 55 else '')
+        preview = chat['last_assistant'][:65] + ('…' if len(chat['last_assistant']) > 65 else '')
         model_short = chat['model'].replace('claude-', '').replace('-', ' ')
-        self.setText(f"{title}\n{chat['date_str']}  ·  {chat['msg_count']} msgs  ·  {model_short}")
-        self.setSizeHint(QSize(0, 58))
+        dur = f"  ·  {chat['duration_str']}" if chat['duration_str'] else ''
+        line3 = f"{chat['date_str']}  ·  {chat['msg_count']} msgs  ·  {model_short}{dur}"
+        self.setText(f"{title}\n{preview}\n{line3}" if preview else f"{title}\n{line3}")
+        self.setSizeHint(QSize(0, 76 if preview else 54))
 
+
+# ─── Chat viewer ──────────────────────────────────────────────────────────────
 
 class ChatViewer(QWidget):
     def __init__(self):
@@ -148,13 +186,41 @@ class ChatViewer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.header = QLabel("Seleccioná un chat de la lista")
-        self.header.setWordWrap(True)
-        self.header.setStyleSheet(
-            "padding: 12px 16px; font-size: 13px; font-weight: bold;"
-            "border-bottom: 1px solid #2a2a3a;"
-        )
-        layout.addWidget(self.header)
+        header_widget = QWidget()
+        header_widget.setStyleSheet("border-bottom: 1px solid #21262d;")
+        h_layout = QVBoxLayout(header_widget)
+        h_layout.setContentsMargins(14, 10, 14, 10)
+        h_layout.setSpacing(6)
+
+        self.title_label = QLabel("Seleccioná un chat")
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #e6edf3;")
+        h_layout.addWidget(self.title_label)
+
+        id_row = QWidget()
+        id_layout = QHBoxLayout(id_row)
+        id_layout.setContentsMargins(0, 0, 0, 0)
+        id_layout.setSpacing(6)
+
+        self.id_label = QLabel()
+        self.id_label.setStyleSheet("font-size: 10px; color: #484f58; font-family: monospace;")
+        id_layout.addWidget(self.id_label)
+
+        self.copy_id_btn = self._small_btn("Copiar ID")
+        self.copy_id_btn.clicked.connect(self._copy_id)
+        id_layout.addWidget(self.copy_id_btn)
+
+        self.copy_cmd_btn = self._small_btn("Copiar comando")
+        self.copy_cmd_btn.clicked.connect(self._copy_cmd)
+        id_layout.addWidget(self.copy_cmd_btn)
+
+        self.export_btn = self._small_btn("Exportar .md")
+        self.export_btn.clicked.connect(self._export_md)
+        id_layout.addWidget(self.export_btn)
+
+        id_layout.addStretch()
+        h_layout.addWidget(id_row)
+        layout.addWidget(header_widget)
 
         self.content = QTextBrowser()
         self.content.setOpenExternalLinks(False)
@@ -163,40 +229,57 @@ class ChatViewer(QWidget):
 
         footer = QWidget()
         footer.setFixedHeight(44)
-        footer.setStyleSheet("border-top: 1px solid #2a2a3a; background: #0d1117;")
-        footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(12, 0, 12, 0)
+        footer.setStyleSheet("border-top: 1px solid #21262d; background: #0d1117;")
+        f_layout = QHBoxLayout(footer)
+        f_layout.setContentsMargins(12, 0, 12, 0)
+        f_layout.setSpacing(8)
 
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #666; font-size: 11px;")
-        footer_layout.addWidget(self.stats_label)
-        footer_layout.addStretch()
+        self.stats_label.setStyleSheet("color: #484f58; font-size: 11px;")
+        f_layout.addWidget(self.stats_label)
+        f_layout.addStretch()
 
-        self.open_btn = QPushButton("Abrir en Konsole")
-        self.open_btn.setEnabled(False)
-        self.open_btn.clicked.connect(self._open_in_konsole)
-        self.open_btn.setStyleSheet("""
+        self.konsole_btn = QPushButton("Abrir en Konsole")
+        self.konsole_btn.setEnabled(False)
+        self.konsole_btn.clicked.connect(self._open_konsole)
+        self.konsole_btn.setStyleSheet("""
             QPushButton {
                 background: #1d4ed8; color: white; border: none;
                 padding: 6px 16px; border-radius: 4px; font-size: 12px;
             }
             QPushButton:hover { background: #2563eb; }
-            QPushButton:disabled { background: #333; color: #666; }
+            QPushButton:disabled { background: #21262d; color: #484f58; }
         """)
-        footer_layout.addWidget(self.open_btn)
+        f_layout.addWidget(self.konsole_btn)
         layout.addWidget(footer)
+
+        for btn in (self.copy_id_btn, self.copy_cmd_btn, self.export_btn):
+            btn.setEnabled(False)
+
+    def _small_btn(self, text):
+        btn = QPushButton(text)
+        btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d; color: #8b949e; border: 1px solid #30363d;
+                padding: 2px 8px; border-radius: 4px; font-size: 10px;
+            }
+            QPushButton:hover { background: #30363d; color: #c9d1d9; }
+            QPushButton:disabled { color: #30363d; border-color: #161b22; }
+        """)
+        return btn
 
     def load_chat(self, chat):
         self.current_chat = chat
-        title = chat['title'][:90] + ('…' if len(chat['title']) > 90 else '')
-        self.header.setText(title)
-        self.open_btn.setEnabled(True)
+        self.title_label.setText(chat['title'][:100])
+        sid = chat['id']
+        self.id_label.setText(f"{sid[:8]}…{sid[-8:]}")
+        for btn in (self.copy_id_btn, self.copy_cmd_btn, self.export_btn, self.konsole_btn):
+            btn.setEnabled(True)
 
         html = ['<html><body style="font-family:sans-serif;font-size:13px;margin:0;padding:8px;">']
         for msg in chat['messages']:
-            role = msg['role']
             body = _md_to_html(msg['text'])
-            if role == 'user':
+            if msg['role'] == 'user':
                 html.append(
                     '<div style="margin:6px 16px 4px 56px;background:#1e3a5f;'
                     'border-radius:8px;padding:10px 14px;color:#c8d8ee;">'
@@ -214,160 +297,484 @@ class ChatViewer(QWidget):
         html.append('</body></html>')
         self.content.setHtml(''.join(html))
 
-        cost_str = f"${chat['cost']:.4f}" if chat['cost'] > 0 else "sin datos de uso"
-        self.stats_label.setText(
-            f"↑ {chat['input_tokens']:,}  ↓ {chat['output_tokens']:,} tokens  ·  {cost_str}  ·  {chat['model']}"
-        )
+        parts = [
+            f"↑ {chat['input_tokens']:,}  ↓ {chat['output_tokens']:,} tokens",
+            f"${chat['cost']:.4f}" if chat['cost'] > 0 else None,
+            chat['duration_str'] or None,
+            chat['model'],
+        ]
+        self.stats_label.setText('  ·  '.join(p for p in parts if p))
 
-    def _open_in_konsole(self):
+    def _copy_id(self):
+        if self.current_chat:
+            QApplication.clipboard().setText(self.current_chat['id'])
+
+    def _copy_cmd(self):
+        if self.current_chat:
+            QApplication.clipboard().setText(f"claude --resume {self.current_chat['id']}")
+
+    def _export_md(self):
+        if not self.current_chat:
+            return
+        chat = self.current_chat
+        name = chat['title'][:40].replace('/', '-').replace('\n', ' ') + '.md'
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar chat", str(Path.home() / name), "Markdown (*.md)"
+        )
+        if not path:
+            return
+        lines = [
+            f"# {chat['title']}\n",
+            f"**ID:** `{chat['id']}`  ",
+            f"**Fecha:** {chat['date_str']}  ",
+            f"**Modelo:** {chat['model']}  ",
+            f"**Tokens:** ↑ {chat['input_tokens']:,}  ↓ {chat['output_tokens']:,}",
+            "", "---", "",
+        ]
+        for msg in chat['messages']:
+            role = "**Vos:**" if msg['role'] == 'user' else "**Claude:**"
+            lines.append(f"{role}\n\n{msg['text']}\n\n---\n")
+        Path(path).write_text('\n'.join(lines), encoding='utf-8')
+
+    def _open_konsole(self):
         if self.current_chat:
             subprocess.Popen(['konsole', '-e', 'claude', '--resume', self.current_chat['id']])
 
 
-class MainWindow(QMainWindow):
+# ─── Token usage chart ────────────────────────────────────────────────────────
+
+class TokenChart(QWidget):
     def __init__(self):
         super().__init__()
-        self.all_chats = []
-        self.setWindowTitle("Claude Chats")
-        self.setMinimumSize(860, 560)
-        self.resize(1100, 680)
+        self._data = {}
+        self.setMinimumHeight(180)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_data(self, chats):
+        self._data = defaultdict(lambda: {'input': 0, 'output': 0})
+        cutoff = date.today() - timedelta(days=29)
+        for chat in chats:
+            if chat['date'] >= cutoff:
+                self._data[chat['date']]['input'] += chat['input_tokens']
+                self._data[chat['date']]['output'] += chat['output_tokens']
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        pl, pr, pt, pb = 52, 16, 20, 36
+
+        today = date.today()
+        days = [today - timedelta(days=29 - i) for i in range(30)]
+        max_val = max(
+            (self._data[d]['input'] + self._data[d]['output']
+             for d in days if d in self._data),
+            default=1
+        )
+
+        chart_w = w - pl - pr
+        chart_h = h - pt - pb
+        slot = chart_w / 30
+        bar_w = max(3, slot - 3)
+
+        painter.setPen(QPen(QColor('#1e293b'), 1))
+        for i in range(5):
+            y = int(pt + i * chart_h / 4)
+            painter.drawLine(pl, y, w - pr, y)
+
+        for i, d in enumerate(days):
+            if d not in self._data:
+                continue
+            x = int(pl + i * slot)
+            in_h = int(self._data[d]['input'] / max_val * chart_h)
+            out_h = int(self._data[d]['output'] / max_val * chart_h)
+            if out_h > 0:
+                painter.fillRect(x, pt + chart_h - in_h - out_h, int(bar_w), out_h,
+                                 QColor('#7c3aed'))
+            if in_h > 0:
+                painter.fillRect(x, pt + chart_h - in_h, int(bar_w), in_h,
+                                 QColor('#1d4ed8'))
+
+        font = QFont()
+        font.setPointSize(8)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor('#4b5563'), 1))
+        for i, d in enumerate(days):
+            if i % 7 == 0 or i == 29:
+                x = int(pl + i * slot)
+                painter.drawText(x - 12, h - 4, d.strftime('%d/%m'))
+
+        painter.setPen(QPen(QColor('#6b7280'), 1))
+        for i in range(5):
+            val = int(max_val * (4 - i) / 4)
+            y = int(pt + i * chart_h / 4)
+            label = f'{val // 1000}K' if val >= 1000 else str(val)
+            painter.drawText(0, y - 6, pl - 4, 16, Qt.AlignmentFlag.AlignRight, label)
+
+        painter.end()
+
+
+# ─── Usage tab ────────────────────────────────────────────────────────────────
+
+class UsageTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("Uso de tokens — últimos 30 días")
+        title.setStyleSheet("font-size: 13px; font-weight: bold; color: #e6edf3;")
+        layout.addWidget(title)
+
+        legend = QWidget()
+        leg_layout = QHBoxLayout(legend)
+        leg_layout.setContentsMargins(0, 0, 0, 0)
+        for color, text in [('#1d4ed8', 'Input'), ('#7c3aed', 'Output')]:
+            dot = QLabel('●')
+            dot.setStyleSheet(f"color: {color}; font-size: 14px;")
+            lbl = QLabel(text)
+            lbl.setStyleSheet("color: #8b949e; font-size: 11px; margin-right: 12px;")
+            leg_layout.addWidget(dot)
+            leg_layout.addWidget(lbl)
+        leg_layout.addStretch()
+        layout.addWidget(legend)
+
+        self.chart = TokenChart()
+        self.chart.setStyleSheet("background: #0d1117; border-radius: 8px;")
+        layout.addWidget(self.chart)
+
+        grid = QWidget()
+        grid_layout = QHBoxLayout(grid)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setSpacing(8)
+        self._stat_vals = {}
+        for key, label in [
+            ('chats', 'Chats'), ('input', 'Tokens entrada'),
+            ('output', 'Tokens salida'), ('cost', 'Costo estimado'),
+        ]:
+            card = QWidget()
+            card.setStyleSheet("background: #161b22; border-radius: 8px;")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(14, 10, 14, 10)
+            val = QLabel('—')
+            val.setStyleSheet("font-size: 20px; font-weight: bold; color: #e6edf3;")
+            lbl = QLabel(label)
+            lbl.setStyleSheet("font-size: 10px; color: #484f58;")
+            cl.addWidget(val)
+            cl.addWidget(lbl)
+            grid_layout.addWidget(card)
+            self._stat_vals[key] = val
+        layout.addWidget(grid)
+
+        model_title = QLabel("Por modelo")
+        model_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #8b949e; margin-top: 4px;")
+        layout.addWidget(model_title)
+
+        self.model_breakdown = QLabel()
+        self.model_breakdown.setStyleSheet(
+            "color: #6b7280; font-size: 11px; font-family: monospace;"
+        )
+        self.model_breakdown.setWordWrap(True)
+        layout.addWidget(self.model_breakdown)
+        layout.addStretch()
+
+    def refresh(self, chats):
+        self.chart.set_data(chats)
+
+        total_in = sum(c['input_tokens'] for c in chats)
+        total_out = sum(c['output_tokens'] for c in chats)
+        total_cost = sum(c['cost'] for c in chats)
+
+        def fmt(n):
+            if n >= 1_000_000:
+                return f'{n / 1_000_000:.1f}M'
+            if n >= 1_000:
+                return f'{n / 1_000:.1f}K'
+            return str(n)
+
+        self._stat_vals['chats'].setText(str(len(chats)))
+        self._stat_vals['input'].setText(fmt(total_in))
+        self._stat_vals['output'].setText(fmt(total_out))
+        self._stat_vals['cost'].setText(f'${total_cost:.4f}')
+
+        by_model = defaultdict(lambda: {'count': 0, 'cost': 0.0})
+        for c in chats:
+            by_model[c['model']]['count'] += 1
+            by_model[c['model']]['cost'] += c['cost']
+
+        lines = []
+        for model, data in sorted(by_model.items(), key=lambda x: -x[1]['cost']):
+            m = model.replace('claude-', '')
+            lines.append(f"  {m:<30} {data['count']:>3} chats   ${data['cost']:.4f}")
+        self.model_breakdown.setText('\n'.join(lines))
+
+
+# ─── Chats tab ────────────────────────────────────────────────────────────────
+
+class ChatsTab(QWidget):
+    def __init__(self, get_chats):
+        super().__init__()
+        self._get_chats = get_chats
         self._setup_ui()
-        self._load_chats()
 
     def _setup_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # Top bar
-        topbar = QWidget()
-        topbar.setFixedHeight(50)
-        topbar.setStyleSheet("background: #0d1117; border-bottom: 1px solid #21262d;")
-        topbar_layout = QHBoxLayout(topbar)
-        topbar_layout.setContentsMargins(16, 0, 16, 0)
-
-        title = QLabel("Claude Chats")
-        title.setStyleSheet("font-size: 15px; font-weight: bold; color: #e6edf3;")
-        topbar_layout.addWidget(title)
-        topbar_layout.addStretch()
+        filter_bar = QWidget()
+        filter_bar.setFixedHeight(44)
+        filter_bar.setStyleSheet("background: #0d1117; border-bottom: 1px solid #21262d;")
+        fb = QHBoxLayout(filter_bar)
+        fb.setContentsMargins(12, 0, 12, 0)
+        fb.setSpacing(8)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Buscar...")
-        self.search.setFixedWidth(200)
-        self.search.textChanged.connect(self._filter_chats)
+        self.search.setPlaceholderText("Buscar en todos los mensajes...")
+        self.search.setFixedWidth(230)
+        self.search.textChanged.connect(self._apply_filters)
         self.search.setStyleSheet("""
             QLineEdit {
                 background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
-                padding: 5px 10px; border-radius: 6px; font-size: 12px;
+                padding: 4px 10px; border-radius: 5px; font-size: 12px;
             }
             QLineEdit:focus { border-color: #388bfd; }
         """)
-        topbar_layout.addWidget(self.search)
+        fb.addWidget(self.search)
 
-        refresh_btn = QPushButton("↻")
-        refresh_btn.setFixedSize(32, 32)
-        refresh_btn.setToolTip("Actualizar")
-        refresh_btn.clicked.connect(self._load_chats)
-        refresh_btn.setStyleSheet("""
+        self.model_combo = QComboBox()
+        self.model_combo.addItem("Todos los modelos", None)
+        self.model_combo.currentIndexChanged.connect(self._apply_filters)
+        self.model_combo.setStyleSheet(self._combo_style())
+        fb.addWidget(self.model_combo)
+
+        self.date_combo = QComboBox()
+        for label, val in [
+            ("Todas las fechas", None),
+            ("Hoy", timedelta(days=1)),
+            ("Esta semana", timedelta(days=7)),
+            ("Este mes", timedelta(days=30)),
+            ("Últimos 3 meses", timedelta(days=90)),
+        ]:
+            self.date_combo.addItem(label, val)
+        self.date_combo.currentIndexChanged.connect(self._apply_filters)
+        self.date_combo.setStyleSheet(self._combo_style())
+        fb.addWidget(self.date_combo)
+
+        self.group_btn = QPushButton("Agrupar por proyecto")
+        self.group_btn.setCheckable(True)
+        self.group_btn.toggled.connect(self._apply_filters)
+        self.group_btn.setStyleSheet("""
             QPushButton {
-                background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
-                border-radius: 6px; font-size: 14px;
+                background: #21262d; color: #8b949e; border: 1px solid #30363d;
+                padding: 4px 10px; border-radius: 5px; font-size: 11px;
             }
-            QPushButton:hover { background: #30363d; }
+            QPushButton:checked { background: #1d4ed8; color: white; border-color: #1d4ed8; }
+            QPushButton:hover:!checked { background: #30363d; }
         """)
-        topbar_layout.addWidget(refresh_btn)
-        main_layout.addWidget(topbar)
+        fb.addWidget(self.group_btn)
+        fb.addStretch()
+        layout.addWidget(filter_bar)
 
-        # Splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
         splitter.setStyleSheet("QSplitter::handle { background: #21262d; }")
 
-        # Left panel
         left = QWidget()
         left.setStyleSheet("background: #0d1117;")
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.setSpacing(0)
 
         self.chat_list = QListWidget()
         self.chat_list.setStyleSheet("""
             QListWidget {
                 background: #0d1117; border: none; color: #c9d1d9; font-size: 12px;
             }
-            QListWidget::item {
-                padding: 8px 12px; border-bottom: 1px solid #161b22;
-            }
+            QListWidget::item { padding: 6px 12px; border-bottom: 1px solid #161b22; }
             QListWidget::item:selected { background: #1d4ed8; color: #fff; }
             QListWidget::item:hover:!selected { background: #161b22; }
         """)
-        self.chat_list.currentItemChanged.connect(self._on_chat_selected)
-        left_layout.addWidget(self.chat_list)
+        self.chat_list.currentItemChanged.connect(self._on_selected)
+        ll.addWidget(self.chat_list)
 
         self.list_footer = QLabel()
-        self.list_footer.setFixedHeight(28)
+        self.list_footer.setFixedHeight(26)
         self.list_footer.setStyleSheet(
             "padding: 0 12px; color: #484f58; font-size: 11px;"
             "border-top: 1px solid #21262d;"
         )
-        left_layout.addWidget(self.list_footer)
-
+        ll.addWidget(self.list_footer)
         splitter.addWidget(left)
 
-        # Right panel
         self.viewer = ChatViewer()
         self.viewer.setStyleSheet("background: #0d1117; color: #c9d1d9;")
         splitter.addWidget(self.viewer)
 
         splitter.setSizes([320, 780])
-        main_layout.addWidget(splitter)
+        layout.addWidget(splitter)
 
-        # Global stats bar
-        statsbar = QWidget()
-        statsbar.setFixedHeight(28)
-        statsbar.setStyleSheet("background: #090d14; border-top: 1px solid #161b22;")
-        stats_layout = QHBoxLayout(statsbar)
-        stats_layout.setContentsMargins(16, 0, 16, 0)
+    def _combo_style(self):
+        return """
+            QComboBox {
+                background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+                padding: 4px 8px; border-radius: 5px; font-size: 11px; min-width: 130px;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background: #161b22; color: #c9d1d9; border: 1px solid #30363d;
+                selection-background-color: #1d4ed8;
+            }
+        """
 
-        self.global_stats = QLabel()
-        self.global_stats.setStyleSheet("color: #484f58; font-size: 11px;")
-        stats_layout.addWidget(self.global_stats)
-        main_layout.addWidget(statsbar)
+    def refresh_models(self, chats):
+        current = self.model_combo.currentData()
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("Todos los modelos", None)
+        for m in sorted({c['model'] for c in chats if c['model'] != 'unknown'}):
+            self.model_combo.addItem(m.replace('claude-', ''), m)
+        idx = self.model_combo.findData(current)
+        if idx >= 0:
+            self.model_combo.setCurrentIndex(idx)
+        self.model_combo.blockSignals(False)
+
+    def _apply_filters(self):
+        chats = self._get_chats()
+        query = self.search.text().lower().strip()
+        model_f = self.model_combo.currentData()
+        date_f = self.date_combo.currentData()
+
+        if query:
+            chats = [c for c in chats if
+                     query in c['title'].lower() or
+                     any(query in m['text'].lower() for m in c['messages'])]
+        if model_f:
+            chats = [c for c in chats if c['model'] == model_f]
+        if date_f:
+            cutoff = (datetime.now() - date_f).timestamp()
+            chats = [c for c in chats if c['mtime'] >= cutoff]
+
+        self._render_list(chats, self.group_btn.isChecked())
+
+    def _render_list(self, chats, group=False):
+        self.chat_list.clear()
+        if group:
+            groups = defaultdict(list)
+            for c in chats:
+                groups[c['project_display']].append(c)
+            for proj in sorted(groups):
+                hdr = QListWidgetItem(f"  {proj}  ({len(groups[proj])})")
+                hdr.setFlags(Qt.ItemFlag.NoItemFlags)
+                hdr.setForeground(QColor('#484f58'))
+                hdr.setSizeHint(QSize(0, 26))
+                f = QFont()
+                f.setPointSize(9)
+                hdr.setFont(f)
+                self.chat_list.addItem(hdr)
+                for c in groups[proj]:
+                    self.chat_list.addItem(ChatListItem(c))
+        else:
+            for c in chats:
+                self.chat_list.addItem(ChatListItem(c))
+        n = len(chats)
+        self.list_footer.setText(f"  {n} conversación{'es' if n != 1 else ''}")
+
+    def _on_selected(self, current, _):
+        if isinstance(current, ChatListItem):
+            self.viewer.load_chat(current.chat)
+
+
+# ─── Main window ──────────────────────────────────────────────────────────────
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.all_chats = []
+        self.setWindowTitle("Claude Chats")
+        self.setMinimumSize(860, 580)
+        self.resize(1150, 720)
+        self._setup_ui()
+        self._load_chats()
+
+    def _setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        topbar = QWidget()
+        topbar.setFixedHeight(46)
+        topbar.setStyleSheet("background: #010409; border-bottom: 1px solid #21262d;")
+        tb = QHBoxLayout(topbar)
+        tb.setContentsMargins(16, 0, 16, 0)
+
+        lbl = QLabel("Claude Chats")
+        lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #e6edf3;")
+        tb.addWidget(lbl)
+        tb.addStretch()
+
+        refresh_btn = QPushButton("↻ Actualizar")
+        refresh_btn.clicked.connect(self._load_chats)
+        refresh_btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+                padding: 5px 12px; border-radius: 5px; font-size: 12px;
+            }
+            QPushButton:hover { background: #30363d; }
+        """)
+        tb.addWidget(refresh_btn)
+        layout.addWidget(topbar)
+
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: none; }
+            QTabBar::tab {
+                background: #010409; color: #8b949e; border: none;
+                padding: 8px 20px; font-size: 12px;
+            }
+            QTabBar::tab:selected { color: #e6edf3; border-bottom: 2px solid #388bfd; }
+            QTabBar::tab:hover:!selected { color: #c9d1d9; }
+        """)
+
+        self.chats_tab = ChatsTab(lambda: self.all_chats)
+        self.chats_tab.setStyleSheet("background: #0d1117;")
+        self.tabs.addTab(self.chats_tab, "Chats")
+
+        self.usage_tab = UsageTab()
+        self.usage_tab.setStyleSheet("background: #0d1117;")
+        self.tabs.addTab(self.usage_tab, "Uso")
+
+        layout.addWidget(self.tabs)
+
+        statusbar = QWidget()
+        statusbar.setFixedHeight(26)
+        statusbar.setStyleSheet("background: #010409; border-top: 1px solid #21262d;")
+        sb = QHBoxLayout(statusbar)
+        sb.setContentsMargins(16, 0, 16, 0)
+        self.status_label = QLabel()
+        self.status_label.setStyleSheet("color: #484f58; font-size: 11px;")
+        sb.addWidget(self.status_label)
+        layout.addWidget(statusbar)
 
         self.setStyleSheet("background: #0d1117; color: #c9d1d9;")
 
     def _load_chats(self):
         self.all_chats = load_all_chats()
-        self._render_list(self.all_chats)
-        self._update_global_stats()
-
-    def _render_list(self, chats):
-        self.chat_list.clear()
-        for chat in chats:
-            self.chat_list.addItem(ChatListItem(chat))
-        n = len(chats)
-        self.list_footer.setText(f"  {n} conversación{'es' if n != 1 else ''}")
-
-    def _filter_chats(self, query):
-        query = query.lower().strip()
-        filtered = self.all_chats if not query else [
-            c for c in self.all_chats if query in c['title'].lower()
-        ]
-        self._render_list(filtered)
-
-    def _on_chat_selected(self, current, _previous):
-        if isinstance(current, ChatListItem):
-            self.viewer.load_chat(current.chat)
-
-    def _update_global_stats(self):
-        n = len(self.all_chats)
+        self.chats_tab.refresh_models(self.all_chats)
+        self.chats_tab._apply_filters()
+        self.usage_tab.refresh(self.all_chats)
         total_in = sum(c['input_tokens'] for c in self.all_chats)
         total_out = sum(c['output_tokens'] for c in self.all_chats)
         total_cost = sum(c['cost'] for c in self.all_chats)
-        self.global_stats.setText(
-            f"{n} chats  ·  ↑ {total_in:,}  ↓ {total_out:,} tokens  ·  costo total estimado: ${total_cost:.4f}"
+        self.status_label.setText(
+            f"{len(self.all_chats)} chats  ·  "
+            f"↑ {total_in:,}  ↓ {total_out:,} tokens  ·  "
+            f"costo total estimado: ${total_cost:.4f}"
         )
 
 
