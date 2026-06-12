@@ -2,6 +2,8 @@
 
 Visor de conversaciones de [Claude Code](https://claude.ai/code) para Linux con integración en KDE.
 
+Desarrollado por [Pablo Gutierrez](https://github.com/Gu7i)
+
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt6-green)
 ![KDE](https://img.shields.io/badge/KDE-Plasma-blue)
