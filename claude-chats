@@ -189,14 +189,14 @@ class ChatViewer(QWidget):
         layout.setSpacing(0)
 
         header_widget = QWidget()
-        header_widget.setStyleSheet("border-bottom: 1px solid #21262d;")
+        header_widget.setStyleSheet("border-bottom: 1px solid #3a4257;")
         h_layout = QVBoxLayout(header_widget)
         h_layout.setContentsMargins(14, 10, 14, 10)
         h_layout.setSpacing(6)
 
         self.title_label = QLabel("Seleccioná un chat")
         self.title_label.setWordWrap(True)
-        self.title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #e6edf3;")
+        self.title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #dce3f0;")
         h_layout.addWidget(self.title_label)
 
         id_row = QWidget()
@@ -205,7 +205,7 @@ class ChatViewer(QWidget):
         id_layout.setSpacing(6)
 
         self.id_label = QLabel()
-        self.id_label.setStyleSheet("font-size: 10px; color: #484f58; font-family: monospace;")
+        self.id_label.setStyleSheet("font-size: 10px; color: #7a8499; font-family: monospace;")
         id_layout.addWidget(self.id_label)
 
         self.copy_id_btn = self._small_btn("Copiar ID")
@@ -231,13 +231,13 @@ class ChatViewer(QWidget):
 
         footer = QWidget()
         footer.setFixedHeight(44)
-        footer.setStyleSheet("border-top: 1px solid #21262d; background: #0d1117;")
+        footer.setStyleSheet("border-top: 1px solid #3a4257; background: #1e2433;")
         f_layout = QHBoxLayout(footer)
         f_layout.setContentsMargins(12, 0, 12, 0)
         f_layout.setSpacing(8)
 
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #484f58; font-size: 11px;")
+        self.stats_label.setStyleSheet("color: #7a8499; font-size: 11px;")
         f_layout.addWidget(self.stats_label)
         f_layout.addStretch()
 
@@ -250,7 +250,7 @@ class ChatViewer(QWidget):
                 padding: 6px 12px; border-radius: 4px; font-size: 12px;
             }
             QPushButton:hover { background: #7f1d1d; color: #fca5a5; }
-            QPushButton:disabled { background: #21262d; color: #484f58; border-color: #21262d; }
+            QPushButton:disabled { background: #2e3650; color: #7a8499; border-color: #2e3650; }
         """)
         f_layout.addWidget(self.delete_btn)
 
@@ -263,7 +263,7 @@ class ChatViewer(QWidget):
                 padding: 6px 16px; border-radius: 4px; font-size: 12px;
             }
             QPushButton:hover { background: #2563eb; }
-            QPushButton:disabled { background: #21262d; color: #484f58; }
+            QPushButton:disabled { background: #2e3650; color: #7a8499; }
         """)
         f_layout.addWidget(self.konsole_btn)
         layout.addWidget(footer)
@@ -275,11 +275,11 @@ class ChatViewer(QWidget):
         btn = QPushButton(text)
         btn.setStyleSheet("""
             QPushButton {
-                background: #21262d; color: #8b949e; border: 1px solid #30363d;
+                background: #2e3650; color: #9aa5bb; border: 1px solid #3a4257;
                 padding: 2px 8px; border-radius: 4px; font-size: 10px;
             }
-            QPushButton:hover { background: #30363d; color: #c9d1d9; }
-            QPushButton:disabled { color: #30363d; border-color: #161b22; }
+            QPushButton:hover { background: #3a4257; color: #dce3f0; }
+            QPushButton:disabled { color: #3a4257; border-color: #252d3d; }
         """)
         return btn
 
@@ -294,21 +294,21 @@ class ChatViewer(QWidget):
 
         html = ['''<html><head><style>
 table { border-collapse: collapse !important; width: 100%; margin: 8px 0; }
-th { background: #1e3a5f !important; color: #93c5fd !important;
-     padding: 8px 12px !important; border: 1px solid #2d4a7a !important; font-weight: bold; }
-td { background: #131c2e !important; color: #c9d1d9 !important;
-     padding: 6px 12px !important; border: 1px solid #21262d !important; }
-code { background: #2a2a3a !important; color: #93c5fd !important;
+th { background: #2a4a72 !important; color: #a8c8f8 !important;
+     padding: 8px 12px !important; border: 1px solid #3a5a8a !important; font-weight: bold; }
+td { background: #1e2a40 !important; color: #ccd6e8 !important;
+     padding: 6px 12px !important; border: 1px solid #3a4257 !important; }
+code { background: #2e3650 !important; color: #a8c8f8 !important;
        padding: 1px 5px !important; border-radius: 3px !important; font-size: 12px !important; }
-pre  { background: #161b27 !important; padding: 10px !important;
+pre  { background: #252d3d !important; padding: 10px !important;
        border-radius: 6px !important; margin: 8px 0 !important; }
-pre code { color: #e2e8f0 !important; background: transparent !important; }
-h1, h2, h3, h4 { color: #60a5fa !important; font-size: 14px !important; margin: 10px 0 4px 0 !important; }
-a { color: #60a5fa !important; }
-blockquote { border-left: 3px solid #4a4a8a !important; padding-left: 10px !important;
-             color: #9ca3af !important; margin: 8px 0 !important; }
-hr { border: none !important; border-top: 1px solid #21262d !important; margin: 10px 0 !important; }
-li { margin: 2px 0; color: #c9d1d9; }
+pre code { color: #dce3f0 !important; background: transparent !important; }
+h1, h2, h3, h4 { color: #7cb9ff !important; font-size: 14px !important; margin: 10px 0 4px 0 !important; }
+a { color: #7cb9ff !important; }
+blockquote { border-left: 3px solid #5a6a9a !important; padding-left: 10px !important;
+             color: #9aa5bb !important; margin: 8px 0 !important; }
+hr { border: none !important; border-top: 1px solid #3a4257 !important; margin: 10px 0 !important; }
+li { margin: 2px 0; color: #ccd6e8; }
 p { margin: 4px 0; }
 </style></head><body style="font-family:sans-serif;font-size:13px;margin:0;padding:8px;">''']
         for msg in chat['messages']:
@@ -317,17 +317,17 @@ p { margin: 4px 0; }
                 html.append(
                     '<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
                     '<tr><td width="18%"></td>'
-                    '<td><div style="background:#1e3a5f;border-radius:8px;'
-                    'padding:10px 14px;color:#c8d8ee;">'
-                    '<div style="font-size:10px;color:#6b9fd4;margin-bottom:4px;">Vos</div>'
+                    '<td><div style="background:#273450;border-radius:8px;'
+                    'padding:10px 14px;color:#ccd6e8;">'
+                    '<div style="font-size:10px;color:#7cb9ff;margin-bottom:4px;">Vos</div>'
                     f'{body}</div></td></tr></table>'
                 )
             else:
                 html.append(
                     '<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
-                    '<tr><td><div style="background:#161b27;border-radius:8px;'
-                    'padding:10px 14px;color:#d4d4d8;border-left:3px solid #4a4a8a;">'
-                    '<div style="font-size:10px;color:#7878aa;margin-bottom:4px;">Claude</div>'
+                    '<tr><td><div style="background:#252d3d;border-radius:8px;'
+                    'padding:10px 14px;color:#ccd6e8;border-left:3px solid #5a6a9a;">'
+                    '<div style="font-size:10px;color:#9aa5bb;margin-bottom:4px;">Claude</div>'
                     f'{body}</div></td>'
                     '<td width="18%"></td></tr></table>'
                 )
@@ -452,7 +452,7 @@ class TokenChart(QWidget):
         slot = chart_w / 30
         bar_w = max(3, slot - 3)
 
-        painter.setPen(QPen(QColor('#1e293b'), 1))
+        painter.setPen(QPen(QColor('#2e3650'), 1))
         for i in range(5):
             y = int(pt + i * chart_h / 4)
             painter.drawLine(pl, y, w - pr, y)
@@ -473,13 +473,13 @@ class TokenChart(QWidget):
         font = QFont()
         font.setPointSize(8)
         painter.setFont(font)
-        painter.setPen(QPen(QColor('#4b5563'), 1))
+        painter.setPen(QPen(QColor('#6b7a99'), 1))
         for i, d in enumerate(days):
             if i % 7 == 0 or i == 29:
                 x = int(pl + i * slot)
                 painter.drawText(x - 12, h - 4, d.strftime('%d/%m'))
 
-        painter.setPen(QPen(QColor('#6b7280'), 1))
+        painter.setPen(QPen(QColor('#9aa5bb'), 1))
         for i in range(5):
             val = int(max_val * (4 - i) / 4)
             y = int(pt + i * chart_h / 4)
@@ -499,7 +499,7 @@ class UsageTab(QWidget):
         layout.setSpacing(12)
 
         title = QLabel("Uso de tokens — últimos 30 días")
-        title.setStyleSheet("font-size: 13px; font-weight: bold; color: #e6edf3;")
+        title.setStyleSheet("font-size: 13px; font-weight: bold; color: #dce3f0;")
         layout.addWidget(title)
 
         legend = QWidget()
@@ -509,14 +509,14 @@ class UsageTab(QWidget):
             dot = QLabel('●')
             dot.setStyleSheet(f"color: {color}; font-size: 14px;")
             lbl = QLabel(text)
-            lbl.setStyleSheet("color: #8b949e; font-size: 11px; margin-right: 12px;")
+            lbl.setStyleSheet("color: #9aa5bb; font-size: 11px; margin-right: 12px;")
             leg_layout.addWidget(dot)
             leg_layout.addWidget(lbl)
         leg_layout.addStretch()
         layout.addWidget(legend)
 
         self.chart = TokenChart()
-        self.chart.setStyleSheet("background: #0d1117; border-radius: 8px;")
+        self.chart.setStyleSheet("background: #1e2433; border-radius: 8px;")
         layout.addWidget(self.chart)
 
         grid = QWidget()
@@ -529,13 +529,13 @@ class UsageTab(QWidget):
             ('output', 'Tokens salida'), ('cost', 'Costo estimado'),
         ]:
             card = QWidget()
-            card.setStyleSheet("background: #161b22; border-radius: 8px;")
+            card.setStyleSheet("background: #252d3d; border-radius: 8px;")
             cl = QVBoxLayout(card)
             cl.setContentsMargins(14, 10, 14, 10)
             val = QLabel('—')
-            val.setStyleSheet("font-size: 20px; font-weight: bold; color: #e6edf3;")
+            val.setStyleSheet("font-size: 20px; font-weight: bold; color: #dce3f0;")
             lbl = QLabel(label)
-            lbl.setStyleSheet("font-size: 10px; color: #484f58;")
+            lbl.setStyleSheet("font-size: 10px; color: #7a8499;")
             cl.addWidget(val)
             cl.addWidget(lbl)
             grid_layout.addWidget(card)
@@ -543,12 +543,12 @@ class UsageTab(QWidget):
         layout.addWidget(grid)
 
         model_title = QLabel("Por modelo")
-        model_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #8b949e; margin-top: 4px;")
+        model_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #9aa5bb; margin-top: 4px;")
         layout.addWidget(model_title)
 
         self.model_breakdown = QLabel()
         self.model_breakdown.setStyleSheet(
-            "color: #6b7280; font-size: 11px; font-family: monospace;"
+            "color: #9aa5bb; font-size: 11px; font-family: monospace;"
         )
         self.model_breakdown.setWordWrap(True)
         layout.addWidget(self.model_breakdown)
@@ -601,7 +601,7 @@ class ChatsTab(QWidget):
 
         filter_bar = QWidget()
         filter_bar.setFixedHeight(44)
-        filter_bar.setStyleSheet("background: #0d1117; border-bottom: 1px solid #21262d;")
+        filter_bar.setStyleSheet("background: #1e2433; border-bottom: 1px solid #3a4257;")
         fb = QHBoxLayout(filter_bar)
         fb.setContentsMargins(12, 0, 12, 0)
         fb.setSpacing(8)
@@ -612,10 +612,10 @@ class ChatsTab(QWidget):
         self.search.textChanged.connect(self._apply_filters)
         self.search.setStyleSheet("""
             QLineEdit {
-                background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+                background: #252d3d; border: 1px solid #3a4257; color: #ccd6e8;
                 padding: 4px 10px; border-radius: 5px; font-size: 12px;
             }
-            QLineEdit:focus { border-color: #388bfd; }
+            QLineEdit:focus { border-color: #5b8dee; }
         """)
         fb.addWidget(self.search)
 
@@ -643,11 +643,11 @@ class ChatsTab(QWidget):
         self.group_btn.toggled.connect(self._apply_filters)
         self.group_btn.setStyleSheet("""
             QPushButton {
-                background: #21262d; color: #8b949e; border: 1px solid #30363d;
+                background: #2e3650; color: #9aa5bb; border: 1px solid #3a4257;
                 padding: 4px 10px; border-radius: 5px; font-size: 11px;
             }
             QPushButton:checked { background: #1d4ed8; color: white; border-color: #1d4ed8; }
-            QPushButton:hover:!checked { background: #30363d; }
+            QPushButton:hover:!checked { background: #3a4257; }
         """)
         fb.addWidget(self.group_btn)
         fb.addStretch()
@@ -655,10 +655,10 @@ class ChatsTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
-        splitter.setStyleSheet("QSplitter::handle { background: #21262d; }")
+        splitter.setStyleSheet("QSplitter::handle { background: #3a4257; }")
 
         left = QWidget()
-        left.setStyleSheet("background: #0d1117;")
+        left.setStyleSheet("background: #1e2433;")
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(0)
@@ -666,11 +666,11 @@ class ChatsTab(QWidget):
         self.chat_list = QListWidget()
         self.chat_list.setStyleSheet("""
             QListWidget {
-                background: #0d1117; border: none; color: #c9d1d9; font-size: 12px;
+                background: #1e2433; border: none; color: #ccd6e8; font-size: 12px;
             }
-            QListWidget::item { padding: 6px 12px; border-bottom: 1px solid #161b22; }
+            QListWidget::item { padding: 6px 12px; border-bottom: 1px solid #252d3d; }
             QListWidget::item:selected { background: #1d4ed8; color: #fff; }
-            QListWidget::item:hover:!selected { background: #161b22; }
+            QListWidget::item:hover:!selected { background: #252d3d; }
         """)
         self.chat_list.currentItemChanged.connect(self._on_selected)
         ll.addWidget(self.chat_list)
@@ -678,14 +678,14 @@ class ChatsTab(QWidget):
         self.list_footer = QLabel()
         self.list_footer.setFixedHeight(26)
         self.list_footer.setStyleSheet(
-            "padding: 0 12px; color: #484f58; font-size: 11px;"
-            "border-top: 1px solid #21262d;"
+            "padding: 0 12px; color: #7a8499; font-size: 11px;"
+            "border-top: 1px solid #3a4257;"
         )
         ll.addWidget(self.list_footer)
         splitter.addWidget(left)
 
         self.viewer = ChatViewer(on_delete=self._on_chat_deleted)
-        self.viewer.setStyleSheet("background: #0d1117; color: #c9d1d9;")
+        self.viewer.setStyleSheet("background: #1e2433; color: #ccd6e8;")
         splitter.addWidget(self.viewer)
 
         splitter.setSizes([320, 780])
@@ -694,12 +694,12 @@ class ChatsTab(QWidget):
     def _combo_style(self):
         return """
             QComboBox {
-                background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+                background: #252d3d; border: 1px solid #3a4257; color: #ccd6e8;
                 padding: 4px 8px; border-radius: 5px; font-size: 11px; min-width: 130px;
             }
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView {
-                background: #161b22; color: #c9d1d9; border: 1px solid #30363d;
+                background: #252d3d; color: #ccd6e8; border: 1px solid #3a4257;
                 selection-background-color: #1d4ed8;
             }
         """
@@ -743,7 +743,7 @@ class ChatsTab(QWidget):
             for proj in sorted(groups):
                 hdr = QListWidgetItem(f"  {proj}  ({len(groups[proj])})")
                 hdr.setFlags(Qt.ItemFlag.NoItemFlags)
-                hdr.setForeground(QColor('#484f58'))
+                hdr.setForeground(QColor('#7a8499'))
                 hdr.setSizeHint(QSize(0, 26))
                 f = QFont()
                 f.setPointSize(9)
@@ -789,12 +789,12 @@ class MainWindow(QMainWindow):
 
         topbar = QWidget()
         topbar.setFixedHeight(46)
-        topbar.setStyleSheet("background: #010409; border-bottom: 1px solid #21262d;")
+        topbar.setStyleSheet("background: #161c2b; border-bottom: 1px solid #3a4257;")
         tb = QHBoxLayout(topbar)
         tb.setContentsMargins(16, 0, 16, 0)
 
         lbl = QLabel("Claude Chats")
-        lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #e6edf3;")
+        lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #dce3f0;")
         tb.addWidget(lbl)
         tb.addStretch()
 
@@ -802,10 +802,10 @@ class MainWindow(QMainWindow):
         refresh_btn.clicked.connect(self._load_chats)
         refresh_btn.setStyleSheet("""
             QPushButton {
-                background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+                background: #2e3650; color: #ccd6e8; border: 1px solid #3a4257;
                 padding: 5px 12px; border-radius: 5px; font-size: 12px;
             }
-            QPushButton:hover { background: #30363d; }
+            QPushButton:hover { background: #3a4257; }
         """)
         tb.addWidget(refresh_btn)
         layout.addWidget(topbar)
@@ -814,34 +814,34 @@ class MainWindow(QMainWindow):
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: none; }
             QTabBar::tab {
-                background: #010409; color: #8b949e; border: none;
+                background: #161c2b; color: #9aa5bb; border: none;
                 padding: 8px 20px; font-size: 12px;
             }
-            QTabBar::tab:selected { color: #e6edf3; border-bottom: 2px solid #388bfd; }
-            QTabBar::tab:hover:!selected { color: #c9d1d9; }
+            QTabBar::tab:selected { color: #dce3f0; border-bottom: 2px solid #5b8dee; }
+            QTabBar::tab:hover:!selected { color: #ccd6e8; }
         """)
 
         self.chats_tab = ChatsTab(lambda: self.all_chats, on_reload=self._load_chats)
-        self.chats_tab.setStyleSheet("background: #0d1117;")
+        self.chats_tab.setStyleSheet("background: #1e2433;")
         self.tabs.addTab(self.chats_tab, "Chats")
 
         self.usage_tab = UsageTab()
-        self.usage_tab.setStyleSheet("background: #0d1117;")
+        self.usage_tab.setStyleSheet("background: #1e2433;")
         self.tabs.addTab(self.usage_tab, "Uso")
 
         layout.addWidget(self.tabs)
 
         statusbar = QWidget()
         statusbar.setFixedHeight(26)
-        statusbar.setStyleSheet("background: #010409; border-top: 1px solid #21262d;")
+        statusbar.setStyleSheet("background: #161c2b; border-top: 1px solid #3a4257;")
         sb = QHBoxLayout(statusbar)
         sb.setContentsMargins(16, 0, 16, 0)
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("color: #484f58; font-size: 11px;")
+        self.status_label.setStyleSheet("color: #7a8499; font-size: 11px;")
         sb.addWidget(self.status_label)
         layout.addWidget(statusbar)
 
-        self.setStyleSheet("background: #0d1117; color: #c9d1d9;")
+        self.setStyleSheet("background: #1e2433; color: #ccd6e8;")
 
     def _load_chats(self):
         self.all_chats = load_all_chats()
