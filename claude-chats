@@ -2,6 +2,7 @@
 """Claude Chats - Visor de conversaciones de Claude Code"""
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -337,8 +338,18 @@ class ChatViewer(QWidget):
         Path(path).write_text('\n'.join(lines), encoding='utf-8')
 
     def _open_konsole(self):
-        if self.current_chat:
-            subprocess.Popen(['konsole', '-e', 'claude', '--resume', self.current_chat['id']])
+        if not self.current_chat:
+            return
+        sid = self.current_chat['id']
+        env = os.environ.copy()
+        local_bin = str(Path.home() / '.local/bin')
+        if local_bin not in env.get('PATH', ''):
+            env['PATH'] = f"{local_bin}:{env.get('PATH', '')}"
+        # bash -c '...; bash' keeps the terminal open after claude exits
+        subprocess.Popen(
+            ['konsole', '-e', 'bash', '-c', f'claude --resume {sid}; bash'],
+            env=env
+        )
 
 
 # ─── Token usage chart ────────────────────────────────────────────────────────
