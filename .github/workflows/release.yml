@@ -1,0 +1,50 @@
+name: Release DMG
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller PySide6
+
+      - name: Build app with PyInstaller
+        run: |
+          pyinstaller \
+            --name "Claude Chats" \
+            --windowed \
+            --onedir \
+            --icon claude-chats.svg \
+            claude-chats
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "Claude Chats" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "Claude Chats.app" 175 190 \
+            --hide-extension "Claude Chats.app" \
+            --app-drop-link 425 190 \
+            "Claude Chats ${{ github.ref_name }}.dmg" \
+            "dist/Claude Chats/"
+
+      - name: Upload DMG to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "Claude Chats ${{ github.ref_name }}.dmg"
